@@ -29,6 +29,12 @@ def main() -> None:
         "--limit", type=int, default=5, help="Max results to return"
     )
 
+    chunk_parser = subparsers.add_parser("chunk", help="Chunk text")
+    chunk_parser.add_argument("text", type=str, help="Text to chunk")
+    chunk_parser.add_argument(
+        "--chunk-size", type=int, default=200, help="Size of each chunk"
+    )
+
     args = parser.parse_args()
 
     match args.command:
@@ -42,6 +48,26 @@ def main() -> None:
             embed_query_text(args.query)
         case "search":
             search_query(args.query, args.limit)
+        case "chunk":
+            chunks: list[str] = []
+            text: str = args.text
+            words = text.split()
+            chunk_size: int = args.chunk_size
+            n = 1
+            text_chunk = ""
+            for word in words:
+                text_chunk += f"{word} "
+                if n == chunk_size:
+                    chunks.append(text_chunk[:-1])
+                    text_chunk = ""
+                    n = 1
+                else:
+                    n += 1
+            if text_chunk:
+                chunks.append(text_chunk.strip())
+            print(f"Chunking {len(text)} characters")
+            for i, chunk in enumerate(chunks, start=1):
+                print(f"{i}. {chunk}")
         case _:
             parser.print_help()
 
