@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import re
 from lib.semantic_search import (
     verify_model,
     embed_text,
@@ -35,6 +36,17 @@ def main() -> None:
         "--chunk-size", type=int, default=200, help="Size of each chunk"
     )
     chunk_parser.add_argument("--overlap", type=int, default=200, help="Chunk overlap")
+
+    semantic_chunk_parser = subparsers.add_parser(
+        "semantic_chunk", help="Semantic chunk"
+    )
+    semantic_chunk_parser.add_argument("text", type=str, help="Text to chunk")
+    semantic_chunk_parser.add_argument(
+        "--max-chunk-size", type=int, default=4, help="Text to chunk"
+    )
+    semantic_chunk_parser.add_argument(
+        "--overlap", type=int, default=0, help="Chunk overlap"
+    )
 
     args = parser.parse_args()
 
@@ -73,6 +85,27 @@ def main() -> None:
             if text_chunk:
                 chunks.append(text_chunk.strip())
             print(f"Chunking {len(text)} characters")
+            for i, chunk in enumerate(chunks, start=1):
+                print(f"{i}. {chunk}")
+        case "semantic_chunk":
+            text = args.text
+            max_chunk_size = args.max_chunk_size
+            chunks: list[str] = []
+            sentences = re.split(r"(?<=[.!?])\s+", text)
+            overlap: int = args.overlap
+            n = 1
+            sentence_chunk = ""
+            print(f"Semantically chunking {len(text)} characters")
+            sentences = re.split(r"(?<=[.!?])\s+", text)
+            chunks = []
+            i = 0
+            n_sentences = len(sentences)
+            while i < n_sentences:
+                chunk_sentences = sentences[i : i + max_chunk_size]
+                if chunks and len(chunk_sentences) <= overlap:
+                    break
+                chunks.append(" ".join(chunk_sentences))
+                i += max_chunk_size - overlap
             for i, chunk in enumerate(chunks, start=1):
                 print(f"{i}. {chunk}")
         case _:
