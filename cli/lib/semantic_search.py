@@ -1,4 +1,5 @@
 import json
+import re
 
 import numpy as np
 from pathlib import Path
@@ -9,8 +10,8 @@ from sentence_transformers import SentenceTransformer
 class SemanticSearch:
     embeddings_path = "cache/embeddings.npy"
 
-    def __init__(self):
-        self.model = SentenceTransformer("all-MiniLM-L6-v2")
+    def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
+        self.model = SentenceTransformer(model_name)
         self.embeddings = None
         self.documents = list()
         self.document_map = dict()
@@ -64,6 +65,78 @@ class SemanticSearch:
             ),
             similarity_list[:limit],
         )
+
+
+class ChunkedSemanticSearch(SemanticSearch):
+    embeddings_path = "cache/chunk_embeddings.npy"
+    chunk_metadata_path = "cache/chunk_metadata.json"
+
+    def __init__(self, model_name: str = "all-MiniLM-L6-v2") -> None:
+        super().__init__(model_name)
+        self.chunk_embeddings = None
+        self.chunk_metadata = None
+
+    def build_chunk_embeddings(self, documents: list[dict]) -> np.ndarray:
+        self.documents = documents
+        doc_strs = []
+        for document in self.documents:
+            self.document_map[document["id"]] = document
+            doc_strs.append(f"{document['title']}: {document['description']}")
+        chunks: list[str] = []
+        chunk_metadata: list[dict] = []
+        for document in documents:
+            description = document["description"]
+            if description.strip() == "":
+                continue
+            description_chunks = semantic_chunk(description)
+            chunks.extend(description_chunks)
+            for i, _ in enumerate(description_chunks):
+                chunk_metadata.append(
+                    {
+                        "movie_idx": document["id"],
+                        "chunk_idx": i,
+                        "total_chunks": len(description_chunks),
+                    }
+                )
+        self.chunk_metadata = chunk_metadata
+        self.chunk_embeddings = self.model.encode(chunks, show_progress_bar=True)
+        np.save(self.embeddings_path, self.chunk_embeddings)
+        with open(self.chunk_metadata_path, "w") as f:
+            json.dump(
+                {"chunks": chunk_metadata, "total_chunks": len(chunks)}, f, indent=2
+            )
+        return self.chunk_embeddings
+
+    def load_or_create_chunk_embeddings(self, documents: list[dict]) -> np.ndarray:
+        self.documents = documents
+        for document in self.documents:
+            self.document_map[document["id"]] = document
+        if (
+            Path(self.embeddings_path).exists()
+            and Path(self.chunk_metadata_path).exists()
+        ):
+            self.chunk_embeddings = np.load(self.embeddings_path)
+            with open(self.chunk_metadata_path, "r") as f:
+                self.chunk_metadata = json.load(f)
+            return self.chunk_embeddings
+        return self.build_chunk_embeddings(documents)
+
+
+def semantic_chunk(text: str, max_chunk_size: int = 4, overlap: int = 1) -> list[str]:
+    chunks: list[str] = []
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    print(f"Semantically chunking {len(text)} characters")
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    chunks = []
+    i = 0
+    n_sentences = len(sentences)
+    while i < n_sentences:
+        chunk_sentences = sentences[i : i + max_chunk_size]
+        if chunks and len(chunk_sentences) <= overlap:
+            break
+        chunks.append(" ".join(chunk_sentences))
+        i += max_chunk_size - overlap
+    return chunks
 
 
 def verify_model():

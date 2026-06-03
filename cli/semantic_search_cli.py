@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import json
 import re
 from lib.semantic_search import (
     verify_model,
@@ -8,6 +9,7 @@ from lib.semantic_search import (
     verify_embeddings,
     embed_query_text,
     search_query,
+    ChunkedSemanticSearch,
 )
 
 
@@ -46,6 +48,9 @@ def main() -> None:
     )
     semantic_chunk_parser.add_argument(
         "--overlap", type=int, default=0, help="Chunk overlap"
+    )
+    subparsers.add_parser(
+        "embed_chunks", help="Embed chunks of text from the movies dataset"
     )
 
     args = parser.parse_args()
@@ -94,7 +99,6 @@ def main() -> None:
             sentences = re.split(r"(?<=[.!?])\s+", text)
             overlap: int = args.overlap
             n = 1
-            sentence_chunk = ""
             print(f"Semantically chunking {len(text)} characters")
             sentences = re.split(r"(?<=[.!?])\s+", text)
             chunks = []
@@ -108,6 +112,15 @@ def main() -> None:
                 i += max_chunk_size - overlap
             for i, chunk in enumerate(chunks, start=1):
                 print(f"{i}. {chunk}")
+        case "embed_chunks":
+            with open("data/movies.json", "r") as f:
+                data = json.load(f)
+                documents = data["movies"]
+            chunked_semantic_search = ChunkedSemanticSearch()
+            chunk_embeddings = chunked_semantic_search.load_or_create_chunk_embeddings(
+                documents
+            )
+            print(f"Generated {len(chunk_embeddings)} chunked embeddings")
         case _:
             parser.print_help()
 
