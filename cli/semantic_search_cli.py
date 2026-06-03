@@ -9,6 +9,7 @@ from lib.semantic_search import (
     verify_embeddings,
     embed_query_text,
     search_query,
+    semantic_chunk,
     ChunkedSemanticSearch,
 )
 
@@ -104,21 +105,10 @@ def main() -> None:
         case "semantic_chunk":
             text = args.text
             max_chunk_size = args.max_chunk_size
-            chunks: list[str] = []
-            sentences = re.split(r"(?<=[.!?])\s+", text)
-            overlap: int = args.overlap
-            n = 1
-            print(f"Semantically chunking {len(text)} characters")
-            sentences = re.split(r"(?<=[.!?])\s+", text)
-            chunks = []
-            i = 0
-            n_sentences = len(sentences)
-            while i < n_sentences:
-                chunk_sentences = sentences[i : i + max_chunk_size]
-                if chunks and len(chunk_sentences) <= overlap:
-                    break
-                chunks.append(" ".join(chunk_sentences))
-                i += max_chunk_size - overlap
+            overlap = args.overlap
+            chunks: list[str] = semantic_chunk(
+                text, max_chunk_size=max_chunk_size, overlap=overlap
+            )
             for i, chunk in enumerate(chunks, start=1):
                 print(f"{i}. {chunk}")
         case "embed_chunks":

@@ -171,10 +171,17 @@ class ChunkedSemanticSearch(SemanticSearch):
 
 
 def semantic_chunk(text: str, max_chunk_size: int = 4, overlap: int = 1) -> list[str]:
+    text = text.strip()
+    if text == "":
+        return []
+    max_chunk_size = max_chunk_size
     chunks: list[str] = []
+    end_punctuations = [".", "!", "?"]
     sentences = re.split(r"(?<=[.!?])\s+", text)
-    print(f"Semantically chunking {len(text)} characters")
-    sentences = re.split(r"(?<=[.!?])\s+", text)
+    if len(sentences) == 1:
+        sentence = sentences[0]
+        if sentence[-1] not in end_punctuations:
+            return [sentence]
     chunks = []
     i = 0
     n_sentences = len(sentences)
@@ -182,7 +189,7 @@ def semantic_chunk(text: str, max_chunk_size: int = 4, overlap: int = 1) -> list
         chunk_sentences = sentences[i : i + max_chunk_size]
         if chunks and len(chunk_sentences) <= overlap:
             break
-        chunks.append(" ".join(chunk_sentences))
+        chunks.append(" ".join(chunk_sentences).strip())
         i += max_chunk_size - overlap
     return chunks
 
