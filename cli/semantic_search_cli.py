@@ -53,6 +53,15 @@ def main() -> None:
         "embed_chunks", help="Embed chunks of text from the movies dataset"
     )
 
+    search_chunked_parser = subparsers.add_parser(
+        "search_chunked",
+        help="Search chunks of text from the movies dataset (requires chunk embeddings to be generated first)",
+    )
+    search_chunked_parser.add_argument("query", type=str, help="Search query")
+    search_chunked_parser.add_argument(
+        "--limit", type=int, default=5, help="Max results to return"
+    )
+
     args = parser.parse_args()
 
     match args.command:
@@ -121,6 +130,22 @@ def main() -> None:
                 documents
             )
             print(f"Generated {len(chunk_embeddings)} chunked embeddings")
+        case "search_chunked":
+            query = args.query
+            limit = args.limit
+            chunked_semantic_search = ChunkedSemanticSearch()
+            with open("data/movies.json", "r") as f:
+                data = json.load(f)
+                documents = data["movies"]
+            chunked_semantic_search.load_or_create_chunk_embeddings(documents)
+            search_results = chunked_semantic_search.search_chunks(query, limit)
+            for i, result in enumerate(search_results, start=1):
+                title = result["title"]
+                document = result["document"]
+                score = result["score"]
+                print(f"\n{i}. {title} (score: {score:.4f})")
+                print(f"   {document}...")
+
         case _:
             parser.print_help()
 

@@ -3,6 +3,7 @@ import re
 
 import numpy as np
 from pathlib import Path
+from collections.abc import Iterator
 
 from sentence_transformers import SentenceTransformer
 
@@ -74,7 +75,7 @@ class ChunkedSemanticSearch(SemanticSearch):
     def __init__(self, model_name: str = "all-MiniLM-L6-v2") -> None:
         super().__init__(model_name)
         self.chunk_embeddings = None
-        self.chunk_metadata = None
+        self.chunk_metadata: list[dict] | None = None
 
     def build_chunk_embeddings(self, documents: list[dict]) -> np.ndarray:
         self.documents = documents
@@ -120,6 +121,53 @@ class ChunkedSemanticSearch(SemanticSearch):
                 self.chunk_metadata = json.load(f)
             return self.chunk_embeddings
         return self.build_chunk_embeddings(documents)
+
+    def search_chunks(self, query: str, limit: int = 10) -> Iterator[dict]:
+        query = query.strip()
+        embedding = self.generate_embedding(query)
+        if self.chunk_embeddings is None:
+            raise ValueError(
+                "No chunk embeddings loaded. Call `load_or_create_chunk_embeddings` first."
+            )
+        if self.chunk_metadata is None:
+            raise ValueError(
+                "No chunk metadata loaded. Call `load_or_create_chunk_embeddings` first."
+            )
+        chunk_scores: list[dict] = list()
+        for chunk_embedding, chunks in zip(
+            self.chunk_embeddings, self.chunk_metadata["chunks"]
+        ):
+            cosine_sim = cosine_similarity(embedding, chunk_embedding)
+            chunk_scores.append(
+                dict(
+                    score=cosine_sim,
+                    chunk_idx=chunks["chunk_idx"],
+                    movie_idx=chunks["movie_idx"],
+                )
+            )
+        movie_idx_to_score: dict[int, float] = dict()
+        for chunk_score in chunk_scores:
+            movie_score = chunk_score["score"]
+            movie_idx = chunk_score["movie_idx"]
+            current_score = movie_idx_to_score.get(movie_idx, float("-inf"))
+            if movie_idx not in movie_idx_to_score or movie_score > current_score:
+                movie_idx_to_score[movie_idx] = movie_score
+        sorted_movies = sorted(
+            movie_idx_to_score.items(), key=lambda x: x[1], reverse=True
+        )
+        result = sorted_movies[:limit]
+        return map(
+            lambda x: dict(
+                id=x[0],
+                title=self.document_map[x[0]]["title"],
+                document=self.document_map[x[0]]["description"][:100],
+                score=round(x[1], 4),
+                metadata=self.chunk_metadata["chunks"][x[0]]
+                if self.chunk_metadata["chunks"]
+                else {},
+            ),
+            result,
+        )
 
 
 def semantic_chunk(text: str, max_chunk_size: int = 4, overlap: int = 1) -> list[str]:
