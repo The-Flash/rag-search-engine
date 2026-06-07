@@ -7,6 +7,12 @@ from .semantic_search import ChunkedSemanticSearch
 
 
 def hybrid_score(bm25_score: float, semantic_score: float, alpha: float = 0.5) -> float:
+    """
+    Calculate the hybrid score as a weighted average of BM25 and semantic scores.
+    The alpha parameter controls the weight of each component:
+    - alpha = 1.0: Only BM25 score is considered.
+    - alpha = 0.0: Only semantic score is considered.
+    """
     return alpha * bm25_score + (1 - alpha) * semantic_score
 
 
