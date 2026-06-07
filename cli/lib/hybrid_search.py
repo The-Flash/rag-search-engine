@@ -46,8 +46,6 @@ class HybridSearch:
         min_semantic_search_score = min(
             map(lambda result: result["score"], semantic_search_results)
         )
-        print("max semantic", max_semantic_search_score)
-        print("min semantic", min_semantic_search_score)
         for doc_id, keyword_score in keyword_search_results:
             weighted_map[doc_id] = {
                 "keyword_score": min_max_normalize(
