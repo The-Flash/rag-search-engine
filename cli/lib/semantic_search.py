@@ -122,7 +122,7 @@ class ChunkedSemanticSearch(SemanticSearch):
             return self.chunk_embeddings
         return self.build_chunk_embeddings(documents)
 
-    def search_chunks(self, query: str, limit: int = 10) -> Iterator[dict]:
+    def search_chunks(self, query: str, limit: int = 10) -> list[dict]:
         query = query.strip()
         embedding = self.generate_embedding(query)
         if self.chunk_embeddings is None:
@@ -156,17 +156,19 @@ class ChunkedSemanticSearch(SemanticSearch):
             movie_idx_to_score.items(), key=lambda x: x[1], reverse=True
         )
         result = sorted_movies[:limit]
-        return map(
-            lambda x: dict(
-                id=x[0],
-                title=self.document_map[x[0]]["title"],
-                document=self.document_map[x[0]]["description"][:100],
-                score=round(x[1], 4),
-                metadata=self.chunk_metadata["chunks"][x[0]]
-                if self.chunk_metadata["chunks"]
-                else {},
-            ),
-            result,
+        return list(
+            map(
+                lambda x: dict(
+                    id=x[0],
+                    title=self.document_map[x[0]]["title"],
+                    document=self.document_map[x[0]]["description"][:100],
+                    score=round(x[1], 4),
+                    metadata=self.chunk_metadata["chunks"][x[0]]
+                    if self.chunk_metadata["chunks"]
+                    else {},
+                ),
+                result,
+            )
         )
 
 

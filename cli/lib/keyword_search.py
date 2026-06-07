@@ -6,7 +6,7 @@ from collections import Counter
 
 from nltk.stem import PorterStemmer
 
-from search_utils import BM25_B, BM25_K1
+from lib.search_utils import BM25_B, BM25_K1
 
 
 def get_stop_words() -> list[str]:
