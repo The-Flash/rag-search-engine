@@ -6,6 +6,13 @@ from .keyword_search import InvertedIndex
 from .semantic_search import ChunkedSemanticSearch
 
 
+def rrf_score(rank: int, k: int = 60) -> float:
+    """
+    Calculate the Reciprocal Rank Fusion (RRF) score for a given rank and k value.
+    """
+    return 1 / (k + rank)
+
+
 def hybrid_score(bm25_score: float, semantic_score: float, alpha: float = 0.5) -> float:
     """
     Calculate the hybrid score as a weighted average of BM25 and semantic scores.
@@ -38,8 +45,8 @@ class HybridSearch:
         weighted_map = (
             dict()
         )  # doc_id -> {"keyword_score": float, "semantic_score": float}
-        keyword_search_results = self._bm25_search(query, 500 * 5)
-        semantic_search_results = self._semantic_search(query, 500 * 5)
+        keyword_search_results = self._bm25_search(query, 500 * limit)
+        semantic_search_results = self._semantic_search(query, 500 * limit)
         max_keyword_search_score = max(
             map(lambda result: result[1], keyword_search_results)
         )
@@ -89,4 +96,37 @@ class HybridSearch:
         )[:limit]
 
     def rrf_search(self, query: str, k: int, limit: int = 10) -> list[dict]:
-        raise NotImplementedError("RRF hybrid search is not implemented yet.")
+        weighted_map = (
+            dict()
+        )  # doc_id -> {"keyword_rank": float, "semantic_rank": float}
+        semantic_search_results = self._semantic_search(query, 500 * limit)
+        keyword_search_results = self._bm25_search(query, 500 * limit)
+
+        for i, r in enumerate(keyword_search_results):
+            (doc_id, _) = r
+            weighted_map[doc_id] = {
+                "keyword_rank": rrf_score(i, k),
+                "semantic_score": 0.0,
+                "document": self.idx.docmap[doc_id],
+            }
+
+        for i, r in enumerate(semantic_search_results):
+            doc_id = r["id"]
+            if doc_id not in weighted_map:
+                weighted_map[doc_id] = {
+                    "keyword_rank": 0.0,
+                    "document": self.semantic_search.document_map[doc_id],
+                    "semantic_rank": rrf_score(
+                        i,
+                        k,
+                    ),
+                }
+            else:
+                weighted_map[doc_id]["semantic_rank"] = rrf_score(i, k)
+        for doc_id in weighted_map:
+            keyword_rank = weighted_map[doc_id]["keyword_rank"]
+            semantic_rank = weighted_map[doc_id]["semantic_rank"]
+            weighted_map[doc_id]["hybrid_score"] = keyword_rank + semantic_rank
+        return sorted(
+            weighted_map.values(), key=lambda x: x["hybrid_score"], reverse=True
+        )[:limit]

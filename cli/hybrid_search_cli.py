@@ -36,6 +36,11 @@ def main() -> None:
 
     weighted_search_parser.add_argument("--limit", type=int, help="Limit", default=5)
 
+    rrf_search_parser = subparsers.add_parser("rrf-search", help="RRF score")
+    rrf_search_parser.add_argument("query", type=str, help="Search query")
+    rrf_search_parser.add_argument("--k", type=int, help="K value", default=60)
+    rrf_search_parser.add_argument("--limit", type=int, help="Limit", default=5)
+
     args = parser.parse_args()
 
     match args.command:
@@ -63,6 +68,20 @@ def main() -> None:
                     f" BM25: {result['keyword_score']:.4f}, Semantic: {result['semantic_score']:.4f}"
                 )
                 print(f" {result['document']['description'][:100]}...")
+        case "rrf-search":
+            with open("data/movies.json", "r") as f:
+                data = json.load(f)
+                movies = data["movies"]
+            hybrid_search = HybridSearch(movies)
+            results = hybrid_search.rrf_search(args.query, args.k, args.limit)
+            for idx, result in enumerate(results, start=1):
+                print(f"{idx}. {result['document']['title']}")
+                print(f" RRF Score: {result['hybrid_score']:.4f}")
+                print(
+                    f" BM25: {result['keyword_rank']:.4f}, Semantic: {result['semantic_rank']:.4f}"
+                )
+                print(f" {result['document']['description'][:100]}...")
+
         case _:
             parser.print_help()
 
