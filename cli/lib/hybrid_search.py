@@ -1,9 +1,24 @@
 import os
+from typing import Literal
+
+from google import genai
 
 from .search_utils import min_max_normalize
 
 from .keyword_search import InvertedIndex
 from .semantic_search import ChunkedSemanticSearch
+
+type SPELL = Literal["spell"]
+
+
+def spell_enhance_query(query: str) -> str:
+    return f"""Fix any spelling errors in the user-provided movie search query below.
+    Correct only clear, high-confidence typos. Do not rewrite, add, remove, or reorder words.
+    Preserve punctuation and capitalization unless a change is required for a typo fix.
+    If there are no spelling errors, or if you're unsure, output the original query unchanged.
+    Output only the final query text, nothing else.
+    User query: "{query}"
+    """
 
 
 def rrf_score(rank: int, k: int = 60) -> float:
@@ -95,7 +110,26 @@ class HybridSearch:
             weighted_map.values(), key=lambda x: x["hybrid_score"], reverse=True
         )[:limit]
 
-    def rrf_search(self, query: str, k: int, limit: int = 10) -> list[dict]:
+    def rrf_search(
+        self, query: str, k: int, limit: int = 10, enhance: SPELL | None = None
+    ) -> list[dict]:
+        api_key = os.environ.get("GEMINI_API_KEY")
+
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY environment variable not set")
+
+        is_spell_enhance = enhance == "spell"
+        client = genai.Client(api_key=api_key)
+        if is_spell_enhance:
+            response = client.models.generate_content(
+                model="gemma-4-26b-a4b-it",
+                contents=spell_enhance_query(query),
+            )
+            if response.text is not None:
+                enhanced_query = response.text.strip()
+                print(f"Enhanced query ({enhance}): '{query}' -> '{enhanced_query}'\n")
+                query = enhanced_query
+
         weighted_map = (
             dict()
         )  # doc_id -> {"keyword_rank": float, "semantic_rank": float}
@@ -106,7 +140,7 @@ class HybridSearch:
             (doc_id, _) = r
             weighted_map[doc_id] = {
                 "keyword_rank": rrf_score(i, k),
-                "semantic_score": 0.0,
+                "semantic_rank": 0.0,
                 "document": self.idx.docmap[doc_id],
             }
 

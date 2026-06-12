@@ -1,8 +1,11 @@
 import argparse
 import json
 
+from dotenv import load_dotenv
 from lib.search_utils import min_max_normalize
 from lib.hybrid_search import HybridSearch
+
+load_dotenv()
 
 
 def normalize_command(scores: list[float]) -> list[float]:
@@ -40,6 +43,12 @@ def main() -> None:
     rrf_search_parser.add_argument("query", type=str, help="Search query")
     rrf_search_parser.add_argument("--k", type=int, help="K value", default=60)
     rrf_search_parser.add_argument("--limit", type=int, help="Limit", default=5)
+    rrf_search_parser.add_argument(
+        "--enhance",
+        type=str,
+        choices=["spell"],
+        help="Query enhancement method",
+    )
 
     args = parser.parse_args()
 
@@ -73,7 +82,9 @@ def main() -> None:
                 data = json.load(f)
                 movies = data["movies"]
             hybrid_search = HybridSearch(movies)
-            results = hybrid_search.rrf_search(args.query, args.k, args.limit)
+            results = hybrid_search.rrf_search(
+                args.query, args.k, args.limit, args.enhance
+            )
             for idx, result in enumerate(results, start=1):
                 print(f"{idx}. {result['document']['title']}")
                 print(f" RRF Score: {result['hybrid_score']:.4f}")
