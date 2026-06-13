@@ -9,6 +9,7 @@ from .keyword_search import InvertedIndex
 from .semantic_search import ChunkedSemanticSearch
 
 type SPELL = Literal["spell"]
+type REWRITE = Literal["rewrite"]
 
 
 def spell_enhance_query(query: str) -> str:
@@ -17,6 +18,27 @@ def spell_enhance_query(query: str) -> str:
     Preserve punctuation and capitalization unless a change is required for a typo fix.
     If there are no spelling errors, or if you're unsure, output the original query unchanged.
     Output only the final query text, nothing else.
+    User query: "{query}"
+    """
+
+
+def rewrite_enhance_query(query: str) -> str:
+    return f"""Rewrite the user-provided movie search query below to be more specific and searchable.
+    Consider:
+    - Common movie knowledge (famous actors, popular films)
+    - Genre conventions (horror = scary, animation = cartoon)
+    - Keep the rewritten query concise (under 10 words)
+    - It should be a Google-style search query, specific enough to yield relevant results
+    - Don't use boolean logic
+
+    Examples:
+    - "that bear movie where leo gets attacked" -> "The Revenant Leonardo DiCaprio bear attack"
+    - "movie about bear in london with marmalade" -> "Paddington London marmalade"
+    - "scary movie with bear from few years ago" -> "bear horror movie 2015-2020"
+
+    If you cannot improve the query, output the original unchanged.
+    Output only the rewritten query text, nothing else.
+
     User query: "{query}"
     """
 
@@ -111,7 +133,11 @@ class HybridSearch:
         )[:limit]
 
     def rrf_search(
-        self, query: str, k: int, limit: int = 10, enhance: SPELL | None = None
+        self,
+        query: str,
+        k: int,
+        limit: int = 10,
+        enhance: SPELL | REWRITE | None = None,
     ) -> list[dict]:
         api_key = os.environ.get("GEMINI_API_KEY")
 
@@ -119,11 +145,22 @@ class HybridSearch:
             raise ValueError("GEMINI_API_KEY environment variable not set")
 
         is_spell_enhance = enhance == "spell"
+        is_rewrite_enhance = enhance == "rewrite"
         client = genai.Client(api_key=api_key)
         if is_spell_enhance:
             response = client.models.generate_content(
                 model="gemma-4-26b-a4b-it",
                 contents=spell_enhance_query(query),
+            )
+            if response.text is not None:
+                enhanced_query = response.text.strip()
+                print(f"Enhanced query ({enhance}): '{query}' -> '{enhanced_query}'\n")
+                query = enhanced_query
+
+        if is_rewrite_enhance:
+            response = client.models.generate_content(
+                model="gemma-4-26b-a4b-it",
+                contents=rewrite_enhance_query(query),
             )
             if response.text is not None:
                 enhanced_query = response.text.strip()

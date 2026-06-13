@@ -46,7 +46,7 @@ def main() -> None:
     rrf_search_parser.add_argument(
         "--enhance",
         type=str,
-        choices=["spell"],
+        choices=["spell", "rewrite"],
         help="Query enhancement method",
     )
 
@@ -62,13 +62,6 @@ def main() -> None:
                 movies = data["movies"]
             hybrid_search = HybridSearch(movies)
             results = hybrid_search.weighted_search(args.query, args.alpha, args.limit)
-            # 1. Paddington
-            #  Hybrid Score: 1.000
-            #  BM25: 1.000, Semantic: 1.000
-            #  Deep in the rainforests of Peru, a young bear lives peacefully with his Aunt Lucy and Uncle Pastuzo,...
-            # 2. The Indian in the Cupboard
-            #  Hybrid Score: 0.943
-            #  BM25: 0.966, Semantic: 0.850
             print("Search results:")
             for idx, result in enumerate(results, start=1):
                 print(f"{idx}. {result['document']['title']}")
