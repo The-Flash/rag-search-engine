@@ -46,8 +46,12 @@ def main() -> None:
     rrf_search_parser.add_argument(
         "--enhance",
         type=str,
-        choices=["spell", "rewrite"],
+        choices=["spell", "rewrite", "expand"],
         help="Query enhancement method",
+    )
+    rrf_search_parser.add_argument(
+        "--rerank-method",
+        type=str,
     )
 
     args = parser.parse_args()
@@ -71,18 +75,22 @@ def main() -> None:
                 )
                 print(f" {result['document']['description'][:100]}...")
         case "rrf-search":
+            print("rerank - ", args.rerank_method)
             with open("data/movies.json", "r") as f:
                 data = json.load(f)
                 movies = data["movies"]
             hybrid_search = HybridSearch(movies)
             results = hybrid_search.rrf_search(
-                args.query, args.k, args.limit, args.enhance
+                args.query, args.k, args.limit, args.enhance, args.rerank_method
             )
             for idx, result in enumerate(results, start=1):
                 print(f"{idx}. {result['document']['title']}")
                 print(f" RRF Score: {result['hybrid_score']:.4f}")
+                print(f"Re-rank Score: {result['llm_score']:.4f}/10")
                 print(
-                    f" BM25: {result['keyword_rank']:.4f}, Semantic: {result['semantic_rank']:.4f}"
+                    f"""
+                    BM25: {result["keyword_rank"]:.4f}, Semantic: {result["semantic_rank"]:.4f}
+                    """
                 )
                 print(f" {result['document']['description'][:100]}...")
 

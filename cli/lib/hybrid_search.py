@@ -1,4 +1,5 @@
 import os
+import time
 from typing import Literal
 
 from google import genai
@@ -10,6 +11,12 @@ from .semantic_search import ChunkedSemanticSearch
 
 type SPELL = Literal["spell"]
 type REWRITE = Literal["rewrite"]
+type EXPAND = Literal["expand"]
+
+type ENHANCE = SPELL | REWRITE | EXPAND
+
+type INDIVIDUAL = Literal["individual"]
+type RERANK = INDIVIDUAL
 
 
 def spell_enhance_query(query: str) -> str:
@@ -41,6 +48,38 @@ def rewrite_enhance_query(query: str) -> str:
 
     User query: "{query}"
     """
+
+
+def expand_enhance_query(query: str) -> str:
+    return f"""Expand the user-provided movie search query below with related terms.
+
+Add synonyms and related concepts that might appear in movie descriptions.
+Keep expansions relevant and focused.
+Output only the additional terms; they will be appended to the original query.
+
+Examples:
+- "scary bear movie" -> "scary horror grizzly bear movie terrifying film"
+- "action movie with bear" -> "action thriller bear chase fight adventure"
+- "comedy with bear" -> "comedy funny bear humor lighthearted"
+
+User query: "{query}"
+"""
+
+
+def individual_rerank_query(query: str, doc_title: str, doc_description: str) -> str:
+    return f"""Rate how well this movie matches the search query.
+
+Query: "{query}"
+Movie: {doc_title} - {doc_description}
+
+Consider:
+- Direct relevance to query
+- User intent (what they're looking for)
+- Content appropriateness
+
+Rate 0-10 (10 = perfect match).
+Output ONLY the number in your response, no other text or explanation.
+"""
 
 
 def rrf_score(rank: int, k: int = 60) -> float:
@@ -137,7 +176,8 @@ class HybridSearch:
         query: str,
         k: int,
         limit: int = 10,
-        enhance: SPELL | REWRITE | None = None,
+        enhance: ENHANCE | None = None,
+        rerank: RERANK | None = None,
     ) -> list[dict]:
         api_key = os.environ.get("GEMINI_API_KEY")
 
@@ -146,6 +186,10 @@ class HybridSearch:
 
         is_spell_enhance = enhance == "spell"
         is_rewrite_enhance = enhance == "rewrite"
+        is_expand_enhance = enhance == "expand"
+        is_individual_rerank = rerank == "individual"
+        if is_individual_rerank:
+            limit = limit * 5
         client = genai.Client(api_key=api_key)
         if is_spell_enhance:
             response = client.models.generate_content(
@@ -166,6 +210,15 @@ class HybridSearch:
                 enhanced_query = response.text.strip()
                 print(f"Enhanced query ({enhance}): '{query}' -> '{enhanced_query}'\n")
                 query = enhanced_query
+        if is_expand_enhance:
+            response = client.models.generate_content(
+                model="gemma-4-26b-a4b-it",
+                contents=expand_enhance_query(query),
+            )
+            if response.text is not None:
+                enhanced_query = response.text.strip()
+                print(f"Enhanced query ({enhance}): '{query}' -> '{enhanced_query}'\n")
+                query = enhanced_query
 
         weighted_map = (
             dict()
@@ -173,14 +226,17 @@ class HybridSearch:
         semantic_search_results = self._semantic_search(query, 500 * limit)
         keyword_search_results = self._bm25_search(query, 500 * limit)
 
+        print("### keyword search ranking")
         for i, r in enumerate(keyword_search_results):
             (doc_id, _) = r
             weighted_map[doc_id] = {
                 "keyword_rank": rrf_score(i, k),
                 "semantic_rank": 0.0,
                 "document": self.idx.docmap[doc_id],
+                "llm_score": 0,
             }
 
+        print("### semantic search ranking")
         for i, r in enumerate(semantic_search_results):
             doc_id = r["id"]
             if doc_id not in weighted_map:
@@ -191,13 +247,33 @@ class HybridSearch:
                         i,
                         k,
                     ),
+                    "llm_score": 0,
                 }
             else:
                 weighted_map[doc_id]["semantic_rank"] = rrf_score(i, k)
+
+        print("### hybrid search ranking")
         for doc_id in weighted_map:
             keyword_rank = weighted_map[doc_id]["keyword_rank"]
             semantic_rank = weighted_map[doc_id]["semantic_rank"]
             weighted_map[doc_id]["hybrid_score"] = keyword_rank + semantic_rank
+
+        print("### llm ranking")
+        for doc_id in weighted_map:
+            time.sleep(3)
+            document = weighted_map[doc_id]["document"]
+            print(f"Ranking doc {document['id']}")
+            response = client.models.generate_content(
+                model="gemma-4-26b-a4b-it",
+                contents=individual_rerank_query(
+                    query, document["title"], document["description"]
+                ),
+            )
+            if response.text is not None:
+                weighted_map[doc_id]["llm_score"] = response.text
+
+            print(f"Done ranking {document['id']}")
+
         return sorted(
-            weighted_map.values(), key=lambda x: x["hybrid_score"], reverse=True
+            weighted_map.values(), key=lambda x: x["llm_score"], reverse=True
         )[:limit]
