@@ -75,7 +75,6 @@ def main() -> None:
                 )
                 print(f" {result['document']['description'][:100]}...")
         case "rrf-search":
-            print("rerank - ", args.rerank_method)
             with open("data/movies.json", "r") as f:
                 data = json.load(f)
                 movies = data["movies"]

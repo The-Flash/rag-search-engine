@@ -1,4 +1,5 @@
 import os
+import json
 import time
 from typing import Literal
 
@@ -16,7 +17,10 @@ type EXPAND = Literal["expand"]
 type ENHANCE = SPELL | REWRITE | EXPAND
 
 type INDIVIDUAL = Literal["individual"]
-type RERANK = INDIVIDUAL
+type BATCH = Literal["batch"]
+type RERANK = INDIVIDUAL | BATCH
+
+MODEL = "gemma-4-26b-a4b-it"
 
 
 def spell_enhance_query(query: str) -> str:
@@ -80,6 +84,28 @@ Consider:
 Rate 0-10 (10 = perfect match).
 Output ONLY the number in your response, no other text or explanation.
 """
+
+
+def batch_rerank_query(query: str, doc_list_str: str):
+    return f"""
+    Rank the movies listed below by relevance to the following search query.
+
+    Query: "{query}"
+
+    Movies:
+    {doc_list_str}
+
+    Return the movie IDs in order of relevance, best match first.
+
+    Your response must be a raw JSON array of integers.
+    Do not wrap the JSON in Markdown. Do not use a ```json code block.
+    Do not include any explanatory text.
+
+    For example:
+    [75, 12, 34, 2, 1]
+
+    Ranking:
+    """.strip()
 
 
 def rrf_score(rank: int, k: int = 60) -> float:
@@ -188,12 +214,13 @@ class HybridSearch:
         is_rewrite_enhance = enhance == "rewrite"
         is_expand_enhance = enhance == "expand"
         is_individual_rerank = rerank == "individual"
-        if is_individual_rerank:
+        is_batch_rerank = rerank == "batch"
+        if is_individual_rerank or is_batch_rerank:
             limit = limit * 5
         client = genai.Client(api_key=api_key)
         if is_spell_enhance:
             response = client.models.generate_content(
-                model="gemma-4-26b-a4b-it",
+                model=MODEL,
                 contents=spell_enhance_query(query),
             )
             if response.text is not None:
@@ -203,7 +230,7 @@ class HybridSearch:
 
         if is_rewrite_enhance:
             response = client.models.generate_content(
-                model="gemma-4-26b-a4b-it",
+                model=MODEL,
                 contents=rewrite_enhance_query(query),
             )
             if response.text is not None:
@@ -212,7 +239,7 @@ class HybridSearch:
                 query = enhanced_query
         if is_expand_enhance:
             response = client.models.generate_content(
-                model="gemma-4-26b-a4b-it",
+                model=MODEL,
                 contents=expand_enhance_query(query),
             )
             if response.text is not None:
@@ -226,7 +253,6 @@ class HybridSearch:
         semantic_search_results = self._semantic_search(query, 500 * limit)
         keyword_search_results = self._bm25_search(query, 500 * limit)
 
-        print("### keyword search ranking")
         for i, r in enumerate(keyword_search_results):
             (doc_id, _) = r
             weighted_map[doc_id] = {
@@ -236,7 +262,6 @@ class HybridSearch:
                 "llm_score": 0,
             }
 
-        print("### semantic search ranking")
         for i, r in enumerate(semantic_search_results):
             doc_id = r["id"]
             if doc_id not in weighted_map:
@@ -252,28 +277,39 @@ class HybridSearch:
             else:
                 weighted_map[doc_id]["semantic_rank"] = rrf_score(i, k)
 
-        print("### hybrid search ranking")
         for doc_id in weighted_map:
             keyword_rank = weighted_map[doc_id]["keyword_rank"]
             semantic_rank = weighted_map[doc_id]["semantic_rank"]
             weighted_map[doc_id]["hybrid_score"] = keyword_rank + semantic_rank
-
-        print("### llm ranking")
+        doc_list = []
         for doc_id in weighted_map:
-            time.sleep(3)
             document = weighted_map[doc_id]["document"]
-            print(f"Ranking doc {document['id']}")
+            doc_list.append(
+                dict(
+                    id=document["id"],
+                    title=document["title"],
+                    description=document["description"],
+                )
+            )
+            if rerank == "individual":
+                time.sleep(3)
+                response = client.models.generate_content(
+                    model=MODEL,
+                    contents=individual_rerank_query(
+                        query, document["title"], document["description"]
+                    ),
+                )
+                if response.text is not None:
+                    weighted_map[doc_id]["llm_score"] = response.text
+                print(f"Done ranking {document['id']}")
+
+        if rerank == "batch":
             response = client.models.generate_content(
-                model="gemma-4-26b-a4b-it",
-                contents=individual_rerank_query(
-                    query, document["title"], document["description"]
-                ),
+                model=MODEL, contents=batch_rerank_query(query, json.dumps(doc_list))
             )
             if response.text is not None:
-                weighted_map[doc_id]["llm_score"] = response.text
-
-            print(f"Done ranking {document['id']}")
+                print("####", response.text)
 
         return sorted(
-            weighted_map.values(), key=lambda x: x["llm_score"], reverse=True
+            weighted_map.values(), key=lambda x: x["hybrid_score"], reverse=True
         )[:limit]
